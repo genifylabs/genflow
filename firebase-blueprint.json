@@ -22,6 +22,14 @@
           "type": "string",
           "enum": ["light", "dark"],
           "description": "Visual theme configuration preference for UI rendering."
+        },
+        "longestSession": {
+          "type": "number",
+          "description": "Personal best longest session duration in seconds."
+        },
+        "notificationsEnabled": {
+          "type": "boolean",
+          "description": "Push notification opt-in status preference."
         }
       },
       "required": ["name", "email", "createdAt", "theme"]
@@ -93,6 +101,10 @@
         "note": {
           "type": "string",
           "description": "Optional client note reflecting on the session."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Optional focus tag of the session."
         },
         "date": {
           "type": "string",

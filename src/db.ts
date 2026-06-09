@@ -20,7 +20,8 @@ let mockProfile: UserProfile = {
   name: "GenFlow Pioneer",
   email: "pioneer@genify.io",
   createdAt: new Date().toISOString(),
-  theme: "dark"
+  theme: "dark",
+  preset: "glass"
 };
 
 let mockAreas: Area[] = [
@@ -113,7 +114,22 @@ export async function saveUserProfile(uid: string, profile: UserProfile): Promis
   }
   const path = `users/${uid}/profile/info`;
   try {
-    await setDoc(doc(db, path), profile);
+    const profileData: any = {
+      name: profile.name,
+      email: profile.email,
+      createdAt: profile.createdAt,
+      theme: profile.theme
+    };
+    if (profile.preset !== undefined) {
+      profileData.preset = profile.preset;
+    }
+    if (profile.longestSession !== undefined) {
+      profileData.longestSession = profile.longestSession;
+    }
+    if (profile.notificationsEnabled !== undefined) {
+      profileData.notificationsEnabled = profile.notificationsEnabled;
+    }
+    await setDoc(doc(db, path), profileData);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -223,7 +239,7 @@ export async function saveSession(uid: string, session: Session): Promise<string
   const id = session.id || doc(collection(db, `users/${uid}/sessions`)).id;
   const path = `users/${uid}/sessions/${id}`;
   try {
-    await setDoc(doc(db, path), {
+    const sessionData: any = {
       areaId: session.areaId,
       areaName: session.areaName,
       areaColor: session.areaColor,
@@ -231,9 +247,15 @@ export async function saveSession(uid: string, session: Session): Promise<string
       startTime: session.startTime,
       endTime: session.endTime,
       duration: session.duration,
-      note: session.note || "",
       date: session.date
-    });
+    };
+    if (session.note && session.note.trim() !== "") {
+      sessionData.note = session.note.trim();
+    }
+    if (session.tag && session.tag.trim() !== "") {
+      sessionData.tag = session.tag.trim();
+    }
+    await setDoc(doc(db, path), sessionData);
     return id;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

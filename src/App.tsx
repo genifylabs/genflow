@@ -18,6 +18,7 @@ import {
   isFirebaseConfigured
 } from './db';
 import { UserProfile, Area, Session, ActiveTab } from './types';
+import { PRESETS, UIPreset } from './themePresets';
 import AuthScreen from './components/AuthScreen';
 import OnboardingScreen from './components/OnboardingScreen';
 import HomeScreen from './components/HomeScreen';
@@ -26,6 +27,8 @@ import AreasScreen from './components/AreasScreen';
 import ReflectScreen from './components/ReflectScreen';
 import { Header, BottomNavbar } from './components/Navigation';
 import { Sparkles, Loader2 } from 'lucide-react';
+import Confetti from './components/Confetti';
+import { calculateStreak } from './utils';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -41,6 +44,49 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("home");
   const [preselectedAreaForSession, setPreselectedAreaForSession] = useState<Area | undefined>(undefined);
   const [globalLoading, setGlobalLoading] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  const [uiPreset, setUiPreset] = useState<UIPreset>(() => {
+    try {
+      return (localStorage.getItem("genflow_ui_preset") as UIPreset) || "glass";
+    } catch {
+      return "glass";
+    }
+  });
+
+  const [isBentoDashboard, setIsBentoDashboard] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("genflow_bento_dashboard") !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  const handleSelectPreset = async (preset: UIPreset) => {
+    setUiPreset(preset);
+    try {
+      localStorage.setItem("genflow_ui_preset", preset);
+    } catch {}
+
+    // Sync Light/Dark profiles to ensure full database compatibility
+    const targetTheme = preset === "zen" ? "light" : "dark";
+    if (profile && profile.theme !== targetTheme && user) {
+      try {
+        await updateUserTheme(user.uid, targetTheme);
+        setProfile({ ...profile, theme: targetTheme });
+      } catch (err) {
+        console.error("Failed syncing firebase theme for preset:", err);
+      }
+    }
+  };
+
+  const handleToggleBento = () => {
+    const nextVal = !isBentoDashboard;
+    setIsBentoDashboard(nextVal);
+    try {
+      localStorage.setItem("genflow_bento_dashboard", String(nextVal));
+    } catch {}
+  };
 
   // 1. Listen to Firebase Auth state
   useEffect(() => {
@@ -62,6 +108,56 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 1b. Weekly notification digest checks on Sundays
+  useEffect(() => {
+    if (!profile || !profile.notificationsEnabled || sessions.length === 0) return;
+
+    // Check if today is Sunday
+    const isSunday = new Date().getDay() === 0;
+    if (!isSunday) return;
+
+    if (typeof window !== "undefined" && "Notification" in window) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const lastSent = localStorage.getItem('last_sunday_digest_sent');
+      
+      if (lastSent !== todayStr && Notification.permission === "granted") {
+        // Aggregate trailing 7-day focus stats
+        const now = Date.now();
+        const trailing7Days = sessions.filter(s => (now - new Date(s.startTime).getTime()) <= 7 * 24 * 60 * 60 * 1000);
+        const totalMinutes = trailing7Days.reduce((sum, s) => sum + s.duration, 0);
+        const totalHours = (totalMinutes / 60).toFixed(1);
+
+        // Find top Area
+        const areaTimes: Record<string, number> = {};
+        trailing7Days.forEach(s => {
+          areaTimes[s.areaName] = (areaTimes[s.areaName] || 0) + s.duration;
+        });
+        let topAreaName = "None";
+        let maxTime = 0;
+        Object.entries(areaTimes).forEach(([name, time]) => {
+          if (time > maxTime) {
+            maxTime = time;
+            topAreaName = name;
+          }
+        });
+
+        // Compute current streak
+        const currentStreak = calculateStreak(sessions);
+
+        // Trigger dynamic Notification
+        try {
+          new Notification("Your GenFlow Weekly Summary 📊", {
+            body: `Focused ${totalHours}h this week! Top area: ${topAreaName}. Streak: ${currentStreak} days 🔥`,
+            icon: "/favicon.ico"
+          });
+          localStorage.setItem('last_sunday_digest_sent', todayStr);
+        } catch (e) {
+          console.error("Failed to trigger weekly summary alert:", e);
+        }
+      }
+    }
+  }, [profile, sessions]);
+
   // 2. Auxiliary method to query profiles and core records
   const loadUserData = async (uid: string, fallbackEmail: string) => {
     setGlobalLoading(true);
@@ -73,6 +169,13 @@ export default function App() {
       } else {
         setProfile(userProfile);
         setOnboardingRequired(false);
+        
+        if (userProfile.preset) {
+          setUiPreset(userProfile.preset as UIPreset);
+          try {
+            localStorage.setItem("genflow_ui_preset", userProfile.preset);
+          } catch {}
+        }
         
         // Fetch focus metrics
         const loadedAreas = await getAreas(uid);
@@ -110,7 +213,8 @@ export default function App() {
       name: mockOrRealName,
       email: user.email || "",
       createdAt: new Date().toISOString(),
-      theme: "dark"
+      theme: "dark",
+      preset: "glass" // keep classic as default!
     };
 
     try {
@@ -164,11 +268,39 @@ export default function App() {
   };
 
   // Core mutations matching Firebase security wrappers
-  const handleCommitSession = async (session: Session) => {
-    if (!user) return;
+  const handleCommitSession = async (session: Session, elapsedSeconds?: number) => {
+    if (!user || !profile) return;
+
+    // 1. Check if this session completes the weekly goal for its Area
+    const targetArea = areas.find(a => a.id === session.areaId);
+    if (targetArea && targetArea.weeklyGoal > 0) {
+      const now = Date.now();
+      const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+      const prevCompleted = sessions
+        .filter(s => s.areaId === session.areaId && new Date(s.startTime) >= oneWeekAgo)
+        .reduce((sum, s) => sum + s.duration, 0);
+      const nextCompleted = prevCompleted + session.duration;
+      
+      if (prevCompleted < targetArea.weeklyGoal && nextCompleted >= targetArea.weeklyGoal) {
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 5000);
+      }
+    }
+
+    // 2. Commit logged Focus Session
     await saveSession(user.uid, session);
     const updated = await getSessions(user.uid);
     setSessions(updated);
+
+    // 3. Update longestSession record if surpassed
+    if (elapsedSeconds !== undefined && elapsedSeconds > (profile.longestSession || 0)) {
+      const updatedProfile = {
+        ...profile,
+        longestSession: elapsedSeconds
+      };
+      await saveUserProfile(user.uid, updatedProfile);
+      setProfile(updatedProfile);
+    }
   };
 
   const handleSaveArea = async (areaDetails: Area) => {
@@ -192,6 +324,18 @@ export default function App() {
     await deleteSession(user.uid, sessionId);
     const updated = await getSessions(user.uid);
     setSessions(updated);
+  };
+
+  const handleUpdateProfile = async (name: string, notificationsEnabled: boolean) => {
+    if (!user || !profile) return;
+    const updated: UserProfile = {
+      ...profile,
+      name,
+      notificationsEnabled,
+      preset: uiPreset
+    };
+    await saveUserProfile(user.uid, updated);
+    setProfile(updated);
   };
 
   // Render Loader spinner until auth hooks respond
@@ -224,21 +368,25 @@ export default function App() {
   }
 
   const currentTheme = profile.theme || "dark";
+  const styles = PRESETS[uiPreset];
 
   return (
     <div 
       id="app-root" 
-      className={`min-h-screen transition-all duration-300 relative ${
-        currentTheme === "light" 
-          ? "bg-[#f5f7fa] text-slate-800" 
-          : "bg-[#0f1e35] text-slate-100"
-      }`}
+      className={`min-h-screen transition-all duration-300 relative ${styles.rootContainer}`}
     >
       {/* Background visual glowing spot indicating focused environment */}
-      {currentTheme === "dark" ? (
+      {uiPreset === "glass" && (
         <div className="absolute top-[10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[140px] pointer-events-none" />
-      ) : (
-        <div className="absolute top-[10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-blue-400/5 rounded-full blur-[100px] pointer-events-none" />
+      )}
+      {uiPreset === "zen" && (
+        <div className="absolute top-[15%] left-[15%] w-[350px] h-[350px] bg-amber-500/5 rounded-full blur-[100px] pointer-events-none" />
+      )}
+      {uiPreset === "terminal" && (
+        <div className="absolute top-0 inset-x-0 h-[1.5px] bg-[#10B981]/25 shadow-[0_0_15px_#10B981] pointer-events-none" />
+      )}
+      {uiPreset === "vaporwave" && (
+        <div className="absolute top-[10%] left-1/2 -translate-x-1/2 w-[400px] h-[400px] bg-pink-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" />
       )}
 
       {/* Embedded application header */}
@@ -248,16 +396,89 @@ export default function App() {
         onLogout={handleLogout}
         userName={profile.name}
         isSimulated={!isFirebaseConfigured}
+        activePreset={uiPreset}
+        onSelectPreset={handleSelectPreset}
+        isBentoDashboard={isBentoDashboard}
+        onToggleBento={handleToggleBento}
       />
 
-      {/* Main Container view with adaptive offsets */}
-      <main className="max-w-md mx-auto pt-20 px-4 min-h-[calc(100vh-128px)] relative z-10">
-        {globalLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-          </div>
-        ) : (
-          <>
+      {globalLoading ? (
+        <div className="flex h-screen items-center justify-center pt-20">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        </div>
+      ) : (
+        <>
+          {/* 1. Responsive Bento Grid Dashboard for widescreen views */}
+          {isBentoDashboard ? (
+            <div className="hidden md:grid grid-cols-12 gap-6 max-w-7xl mx-auto pt-24 px-6 min-h-[calc(100vh-80px)] pb-12 relative z-10 transition-all duration-500">
+              {/* Left Column: Home Overview Stats & Quick focus launching (col-span-4) */}
+              <div className="col-span-4 space-y-6">
+                <div className="sticky top-24 space-y-4">
+                  <div className={`p-5 rounded-3xl ${styles.card}`}>
+                    <HomeScreen 
+                      userProfile={profile} 
+                      areas={areas} 
+                      sessions={sessions} 
+                      onStartSession={handleQuickStartSession} 
+                      onNavigate={(tab) => {
+                        handleToggleBento(); // switch tabs on click
+                        setActiveTab(tab);
+                      }}
+                      onUpdateProfile={handleUpdateProfile}
+                      onToggleTheme={handleToggleTheme}
+                      onLogout={handleLogout}
+                      activePreset={uiPreset}
+                      onSelectPreset={handleSelectPreset}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Center Column: Interactive Focus Hourglass Timer & Sound Mixer (col-span-5) */}
+              <div className="col-span-5 space-y-4">
+                <div className={`p-6 rounded-3xl ${styles.card} min-h-[580px] flex flex-col justify-between`}>
+                  <SessionScreen 
+                    uid={user.uid}
+                    areas={areas}
+                    defaultArea={preselectedAreaForSession}
+                    onSaveSession={handleCommitSession}
+                    onNavigate={(tab) => {
+                      setPreselectedAreaForSession(undefined);
+                      // In bento view, we stay inside dashboard on save
+                    }}
+                    userProfile={profile}
+                    activePreset={uiPreset}
+                  />
+                </div>
+              </div>
+
+              {/* Right Column: Reflect Analytics Logs, Timeline history, & Goal Progression (col-span-3) */}
+              <div className="col-span-3 space-y-6 max-h-[calc(100vh-120px)] overflow-y-auto pr-2 no-scrollbar">
+                <div className={`p-4 rounded-3xl ${styles.card}`}>
+                  <AreasScreen 
+                    areas={areas} 
+                    onSaveArea={handleSaveArea} 
+                    onDeleteArea={handleDeleteArea}
+                    activePreset={uiPreset}
+                  />
+                </div>
+                <div className={`p-4 rounded-3xl ${styles.card}`}>
+                  <ReflectScreen 
+                    uid={user.uid}
+                    areas={areas} 
+                    sessions={sessions} 
+                    onDeleteSession={handleDeleteSession}
+                    activePreset={uiPreset}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 2. Cozy Tabbed view for mobile screens OR if widescreen bento is explicitly disabled */}
+          <main className={`max-w-md mx-auto pt-20 px-4 min-h-[calc(100vh-128px)] relative z-10 ${
+            isBentoDashboard ? "md:hidden" : ""
+          }`}>
             {activeTab === "home" && (
               <HomeScreen 
                 userProfile={profile} 
@@ -265,6 +486,11 @@ export default function App() {
                 sessions={sessions} 
                 onStartSession={handleQuickStartSession} 
                 onNavigate={(tab) => setActiveTab(tab)}
+                onUpdateProfile={handleUpdateProfile}
+                onToggleTheme={handleToggleTheme}
+                onLogout={handleLogout}
+                activePreset={uiPreset}
+                onSelectPreset={handleSelectPreset}
               />
             )}
 
@@ -278,6 +504,8 @@ export default function App() {
                   setPreselectedAreaForSession(undefined);
                   setActiveTab(tab);
                 }}
+                userProfile={profile}
+                activePreset={uiPreset}
               />
             )}
 
@@ -286,6 +514,7 @@ export default function App() {
                 areas={areas} 
                 onSaveArea={handleSaveArea} 
                 onDeleteArea={handleDeleteArea}
+                activePreset={uiPreset}
               />
             )}
 
@@ -295,14 +524,18 @@ export default function App() {
                 areas={areas} 
                 sessions={sessions} 
                 onDeleteSession={handleDeleteSession}
+                activePreset={uiPreset}
               />
             )}
-          </>
-        )}
-      </main>
+          </main>
+        </>
+      )}
 
-      {/* Global Bottom Tab navigation bar */}
-      <BottomNavbar activeTab={activeTab} onChangeTab={setActiveTab} />
+      {/* Global Bottom Tab navigation bar (Hidden on Bento Dashboard to avoid visual layout clutter) */}
+      <div className={isBentoDashboard ? "md:hidden" : ""}>
+        <BottomNavbar activeTab={activeTab} onChangeTab={setActiveTab} activePreset={uiPreset} />
+      </div>
+      {showConfetti && <Confetti />}
     </div>
   );
 }

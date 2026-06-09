@@ -3,6 +3,9 @@ export interface UserProfile {
   email: string;
   createdAt: string; // ISO String
   theme: "light" | "dark";
+  longestSession?: number; // in seconds
+  notificationsEnabled?: boolean;
+  preset?: string; // stored ui preset name
 }
 
 export interface Area {
@@ -24,6 +27,7 @@ export interface Session {
   endTime: string; // ISO String
   duration: number; // in minutes (endTime - startTime in minutes, rounded)
   note?: string; // optional short reflection
+  tag?: string; // optional focus tag
   date: string; // YYYY-MM-DD
 }
 

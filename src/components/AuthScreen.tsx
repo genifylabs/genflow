@@ -66,6 +66,9 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
       if (err.code === 'auth/invalid-credential') readableError = "Invalid email or password credential.";
       if (err.code === 'auth/email-already-in-use') readableError = "This email is already registered.";
       if (err.code === 'auth/weak-password') readableError = "Password should be at least 6 characters.";
+      if (err.code === 'auth/operation-not-allowed') {
+        readableError = "Email/Password sign-in is not enabled. Go to Firebase Console > Authentication > Sign-in method and enable 'Email/Password'.";
+      }
       setError(readableError);
     } finally {
       setLoading(false);
@@ -94,7 +97,11 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
       );
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Google Authentication failed. Please verify your config.");
+      let readableError = err.message || "Google Authentication failed. Please verify your config.";
+      if (err.code === 'auth/operation-not-allowed') {
+        readableError = "Google Sign-In is not enabled. Go to Firebase Console > Authentication > Sign-in method and enable 'Google'.";
+      }
+      setError(readableError);
     } finally {
       setLoading(false);
     }

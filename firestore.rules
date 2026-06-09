@@ -23,11 +23,13 @@ service cloud.firestore {
     // Entity Schemas
     function isValidProfile(p) {
       return p.keys().hasAll(['name', 'email', 'createdAt', 'theme'])
-          && p.keys().size() == 4
+          && p.keys().size() >= 4 && p.keys().size() <= 6
           && p.name is string && p.name.size() > 0 && p.name.size() <= 128
           && p.email is string && p.email.size() > 0 && p.email.size() <= 256
           && p.createdAt is string && p.createdAt.size() > 0 && p.createdAt.size() <= 40
-          && p.theme is string && (p.theme == 'light' || p.theme == 'dark');
+          && p.theme is string && (p.theme == 'light' || p.theme == 'dark')
+          && (!p.keys().hasAll(['longestSession']) || ((p.longestSession is int || p.longestSession is float) && p.longestSession >= 0))
+          && (!p.keys().hasAll(['notificationsEnabled']) || p.notificationsEnabled is bool);
     }
 
     function isValidArea(a) {
@@ -36,29 +38,30 @@ service cloud.firestore {
           && a.name is string && a.name.size() > 0 && a.name.size() <= 128
           && a.emoji is string && a.emoji.size() > 0 && a.emoji.size() <= 16
           && a.color is string && a.color.size() > 0 && a.color.size() <= 32
-          && a.weeklyGoal is number && a.weeklyGoal >= 0
+          && (a.weeklyGoal is int || a.weeklyGoal is float) && a.weeklyGoal >= 0
           && a.createdAt is string && a.createdAt.size() > 0 && a.createdAt.size() <= 40;
     }
 
     function isValidSession(s) {
       return s.keys().hasAll(['areaId', 'areaName', 'areaColor', 'areaEmoji', 'startTime', 'endTime', 'duration', 'date'])
-          && (s.keys().size() == 8 || (s.keys().size() == 9 && s.keys().hasAll(['note'])))
+          && s.keys().size() >= 8 && s.keys().size() <= 10
           && s.areaId is string && s.areaId.size() > 0
           && s.areaName is string && s.areaName.size() > 0
           && s.areaColor is string && s.areaColor.size() > 0
           && s.areaEmoji is string && s.areaEmoji.size() > 0
           && s.startTime is string && s.startTime.size() > 0 && s.startTime.size() <= 40
           && s.endTime is string && s.endTime.size() > 0 && s.endTime.size() <= 40
-          && s.duration is number && s.duration >= 0
+          && (s.duration is int || s.duration is float) && s.duration >= 0
           && s.date is string && s.date.size() == 10
-          && (!s.keys().hasAll(['note']) || (s.note is string && s.note.size() <= 1000));
+          && (!s.keys().hasAll(['note']) || (s.note is string && s.note.size() <= 1000))
+          && (!s.keys().hasAll(['tag']) || (s.tag is string && s.tag.size() <= 40));
     }
 
     function isValidGoal(g) {
       return g.keys().hasAll(['areaId', 'weeklyTarget', 'updatedAt'])
           && g.keys().size() == 3
           && g.areaId is string && g.areaId.size() > 0
-          && g.weeklyTarget is number && g.weeklyTarget >= 0
+          && (g.weeklyTarget is int || g.weeklyTarget is float) && g.weeklyTarget >= 0
           && g.updatedAt is string && g.updatedAt.size() > 0 && g.updatedAt.size() <= 40;
     }
 
