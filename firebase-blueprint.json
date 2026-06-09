@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "ProfileInfo": {
+      "title": "ProfileInfo",
+      "description": "User profile info and configuration, including active visual theme preferences.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human readable name of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email registered via Firebase Authentication."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp of the profile."
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["light", "dark"],
+          "description": "Visual theme configuration preference for UI rendering."
+        }
+      },
+      "required": ["name", "email", "createdAt", "theme"]
+    },
+    "Area": {
+      "title": "Area",
+      "description": "Subjects, projects, skills, or hobbies tracked by the user.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Clean literal name of the focus Area."
+        },
+        "emoji": {
+          "type": "string",
+          "description": "Single representative emoji character."
+        },
+        "color": {
+          "type": "string",
+          "description": "Hex or Tailwind color representation."
+        },
+        "weeklyGoal": {
+          "type": "number",
+          "description": "Weekly time target in minutes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Standard timestamp when Area was initialized."
+        }
+      },
+      "required": ["name", "emoji", "color", "weeklyGoal", "createdAt"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "A single logged focus timer interval.",
+      "type": "object",
+      "properties": {
+        "areaId": {
+          "type": "string",
+          "description": "Reference identifier to the tracked Area."
+        },
+        "areaName": {
+          "type": "string",
+          "description": "Cached name of the Area to prevent heavy client-side joining."
+        },
+        "areaColor": {
+          "type": "string",
+          "description": "Cached style color of the Area."
+        },
+        "areaEmoji": {
+          "type": "string",
+          "description": "Cached emoji representing the Area."
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Start timestamp of the focus session."
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "End timestamp of the focus session."
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration completed in minutes."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional client note reflecting on the session."
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "Local date string representation in YYYY-MM-DD for simpler timeline queries."
+        }
+      },
+      "required": ["areaId", "areaName", "areaColor", "areaEmoji", "startTime", "endTime", "duration", "date"]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "An target time objective representing an area's weekly commitment.",
+      "type": "object",
+      "properties": {
+        "areaId": {
+          "type": "string",
+          "description": "Reference identifier of the targeted Area."
+        },
+        "weeklyTarget": {
+          "type": "number",
+          "description": "Time objective in minutes per week."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time of modification."
+        }
+      },
+      "required": ["areaId", "weeklyTarget", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{uid}/profile/info": {
+      "schema": "ProfileInfo",
+      "description": "Single profile document tracking core user preferences."
+    },
+    "users/{uid}/areas/{areaId}": {
+      "schema": "Area",
+      "description": "User created categories/subjects for logging sessions."
+    },
+    "users/{uid}/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "List of logged focus sessions."
+    },
+    "users/{uid}/goals/{goalId}": {
+      "schema": "Goal",
+      "description": "Time goals matching focus areas."
+    }
+  }
+}

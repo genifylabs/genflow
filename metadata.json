@@ -1,0 +1,6 @@
+{
+  "name": "GenFlow",
+  "description": "Set. Do. Reflect. A premium mobile-first personal progress tracker built around focused zones and real-time reflections.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

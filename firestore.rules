@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. Global safety net - default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Standard helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Entity Schemas
+    function isValidProfile(p) {
+      return p.keys().hasAll(['name', 'email', 'createdAt', 'theme'])
+          && p.keys().size() == 4
+          && p.name is string && p.name.size() > 0 && p.name.size() <= 128
+          && p.email is string && p.email.size() > 0 && p.email.size() <= 256
+          && p.createdAt is timestamp
+          && p.theme is string && (p.theme == 'light' || p.theme == 'dark');
+    }
+
+    function isValidArea(a) {
+      return a.keys().hasAll(['name', 'emoji', 'color', 'weeklyGoal', 'createdAt'])
+          && a.keys().size() == 5
+          && a.name is string && a.name.size() > 0 && a.name.size() <= 128
+          && a.emoji is string && a.emoji.size() > 0 && a.emoji.size() <= 16
+          && a.color is string && a.color.size() > 0 && a.color.size() <= 32
+          && a.weeklyGoal is number && a.weeklyGoal >= 0
+          && a.createdAt is timestamp;
+    }
+
+    function isValidSession(s) {
+      return s.keys().hasAll(['areaId', 'areaName', 'areaColor', 'areaEmoji', 'startTime', 'endTime', 'duration', 'date'])
+          && (s.keys().size() == 8 || (s.keys().size() == 9 && s.keys().hasAll(['note'])))
+          && s.areaId is string && s.areaId.size() > 0
+          && s.areaName is string && s.areaName.size() > 0
+          && s.areaColor is string && s.areaColor.size() > 0
+          && s.areaEmoji is string && s.areaEmoji.size() > 0
+          && s.startTime is timestamp
+          && s.endTime is timestamp
+          && s.duration is number && s.duration >= 0
+          && s.date is string && s.date.size() == 10
+          && (!s.keys().hasAll(['note']) || (s.note is string && s.note.size() <= 1000));
+    }
+
+    function isValidGoal(g) {
+      return g.keys().hasAll(['areaId', 'weeklyTarget', 'updatedAt'])
+          && g.keys().size() == 3
+          && g.areaId is string && g.areaId.size() > 0
+          && g.weeklyTarget is number && g.weeklyTarget >= 0
+          && g.updatedAt is timestamp;
+    }
+
+    // Rules matching user scopes
+    match /users/{uid} {
+      // Profiles
+      match /profile/info {
+        allow read, get: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidProfile(request.resource.data);
+        allow update: if isOwner(uid) && isValidProfile(request.resource.data)
+                      && request.resource.data.createdAt == resource.data.createdAt
+                      && request.resource.data.email == resource.data.email;
+        allow delete: if false; // Profiles cannot be orphaned by client deletes
+      }
+
+      // Areas
+      match /areas/{areaId} {
+        allow read, get, list: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidId(areaId) && isValidArea(request.resource.data);
+        allow update: if isOwner(uid) && isValidId(areaId) && isValidArea(request.resource.data)
+                      && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(uid);
+      }
+
+      // Sessions
+      match /sessions/{sessionId} {
+        allow read, get, list: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidId(sessionId) && isValidSession(request.resource.data)
+                      && exists(/databases/$(database)/documents/users/$(uid)/areas/$(request.resource.data.areaId));
+        allow update: if isOwner(uid) && isValidId(sessionId) && isValidSession(request.resource.data)
+                      && request.resource.data.areaId == resource.data.areaId;
+        allow delete: if isOwner(uid);
+      }
+
+      // Goals
+      match /goals/{goalId} {
+        allow read, get, list: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidId(goalId) && isValidGoal(request.resource.data)
+                      && exists(/databases/$(database)/documents/users/$(uid)/areas/$(request.resource.data.areaId));
+        allow update: if isOwner(uid) && isValidId(goalId) && isValidGoal(request.resource.data)
+                      && request.resource.data.areaId == resource.data.areaId;
+        allow delete: if isOwner(uid);
+      }
+    }
+  }
+}
