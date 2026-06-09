@@ -26,7 +26,7 @@ service cloud.firestore {
           && p.keys().size() == 4
           && p.name is string && p.name.size() > 0 && p.name.size() <= 128
           && p.email is string && p.email.size() > 0 && p.email.size() <= 256
-          && p.createdAt is timestamp
+          && p.createdAt is string && p.createdAt.size() > 0 && p.createdAt.size() <= 40
           && p.theme is string && (p.theme == 'light' || p.theme == 'dark');
     }
 
@@ -37,7 +37,7 @@ service cloud.firestore {
           && a.emoji is string && a.emoji.size() > 0 && a.emoji.size() <= 16
           && a.color is string && a.color.size() > 0 && a.color.size() <= 32
           && a.weeklyGoal is number && a.weeklyGoal >= 0
-          && a.createdAt is timestamp;
+          && a.createdAt is string && a.createdAt.size() > 0 && a.createdAt.size() <= 40;
     }
 
     function isValidSession(s) {
@@ -47,8 +47,8 @@ service cloud.firestore {
           && s.areaName is string && s.areaName.size() > 0
           && s.areaColor is string && s.areaColor.size() > 0
           && s.areaEmoji is string && s.areaEmoji.size() > 0
-          && s.startTime is timestamp
-          && s.endTime is timestamp
+          && s.startTime is string && s.startTime.size() > 0 && s.startTime.size() <= 40
+          && s.endTime is string && s.endTime.size() > 0 && s.endTime.size() <= 40
           && s.duration is number && s.duration >= 0
           && s.date is string && s.date.size() == 10
           && (!s.keys().hasAll(['note']) || (s.note is string && s.note.size() <= 1000));
@@ -59,7 +59,7 @@ service cloud.firestore {
           && g.keys().size() == 3
           && g.areaId is string && g.areaId.size() > 0
           && g.weeklyTarget is number && g.weeklyTarget >= 0
-          && g.updatedAt is timestamp;
+          && g.updatedAt is string && g.updatedAt.size() > 0 && g.updatedAt.size() <= 40;
     }
 
     // Rules matching user scopes
